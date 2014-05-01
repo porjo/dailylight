@@ -6,14 +6,9 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
-
-type Regex struct {
-	Title  *regexp.Regexp
-	V1     *regexp.Regexp
-	Verses *regexp.Regexp
-}
 
 type Entry struct {
 	Date   time.Time
@@ -29,18 +24,24 @@ type Ref struct {
 	VerseEnd   int
 }
 
-var R Regex
+var (
+	titleReg  *regexp.Regexp
+	v1Reg     *regexp.Regexp
+	versesReg *regexp.Regexp
+)
 
 func init() {
-	R.Title = regexp.MustCompile(`([A-Z]+ [0-9]+) (MORNING|EVENING)`)
-	//R.V1 = regexp.MustCompile(`--([A-Z]{3,4})\. ([0-9]{1,3}):([0-9]{1,2})`)
-	R.V1 = regexp.MustCompile(`--((?:I{0,2} ?)[A-Z]{3,5})\.? ([0-9]{1,3}):([0-9]{1,2})[-,]?([0-9]{0,3}).`)
-	R.Verses = regexp.MustCompile(`\s*-?((?:I{0,2} ?)[a-zA-Z]{3,5})\.? ([0-9]{1,3}):([0-9]{1,2})[-,]?([0-9]{0,3}).`)
+	titleReg = regexp.MustCompile(`([A-Z]+ [0-9]+) (MORNING|EVENING)`)
+	v1Reg = regexp.MustCompile(`--((?:I{0,2} ?)[A-Z]{3,5})\.? ([0-9]{1,3}):([0-9]{1,2})[-,]?([0-9]{0,3}).`)
+	versesReg = regexp.MustCompile(`\s*-?((?:I{0,2} ?)[a-zA-Z]{3,5})\.? ([0-9]{1,3}):([0-9]{1,2})[-,]?([0-9]{0,3}).`)
 }
 
 func main() {
 
-	file, _ := os.Open("daily_light.txt")
+	file, err := os.Open("daily_light.txt")
+	if err != nil {
+		panic(err)
+	}
 	scanner := bufio.NewScanner(file)
 
 	var entries []*Entry
@@ -48,67 +49,69 @@ func main() {
 
 	for scanner.Scan() {
 
-		tmatches := R.Title.FindStringSubmatch(scanner.Text())
-		vmatches := R.V1.FindStringSubmatch(scanner.Text())
-		vvmatches := R.Verses.FindAllStringSubmatch(scanner.Text(), -1)
+		txt := scanner.Text()
+		// The following never matches...why?
+		if txt != "" && strings.Contains("Isa. 33:17", txt) {
+			fmt.Println("Found text")
+		}
 
-		if len(tmatches) == 3 {
+		titler := titleReg.FindStringSubmatch(scanner.Text())
+		v1r := v1Reg.FindStringSubmatch(scanner.Text())
+		versesr := versesReg.FindAllStringSubmatch(scanner.Text(), -1)
+
+		if len(titler) == 3 {
 			var err error
 			if entry != nil {
 				entries = append(entries, entry)
-				//fmt.Printf("Entry %#v\n", entry)
 			}
 			entry = &Entry{}
-			entry.Date, err = time.Parse("January 2", tmatches[1])
+			entry.Date, err = time.Parse("January 2", titler[1])
 			if err != nil {
 				panic(err)
 			}
-			if tmatches[2] == "MORNING" {
+			if titler[2] == "MORNING" {
 				entry.AMPM = "AM"
 			} else {
 				entry.AMPM = "PM"
 			}
-			//fmt.Printf("TMatch %s, %s\n", tmatches[1], tmatches[2])
 		}
-		if len(vmatches) == 5 {
+		if len(v1r) == 5 {
 			var err error
 			var chapter, verseStart, verseEnd int
-			chapter, err = strconv.Atoi(vmatches[2])
+			chapter, err = strconv.Atoi(v1r[2])
 			if err != nil {
 				panic(err)
 			}
-			verseStart, err = strconv.Atoi(vmatches[3])
+			verseStart, err = strconv.Atoi(v1r[3])
 			if err != nil {
 				panic(err)
 			}
-			if vmatches[4] != "" {
-				verseEnd, err = strconv.Atoi(vmatches[4])
+			if v1r[4] != "" {
+				verseEnd, err = strconv.Atoi(v1r[4])
 				if err != nil {
 					panic(err)
 				}
 			} else {
 				verseEnd = verseStart
 			}
-			entry.Verse1 = Ref{vmatches[1], chapter, verseStart, verseEnd}
-			//fmt.Printf("VMatch %s %s:%s\n", vmatches[1], vmatches[2], vmatches[3])
+			entry.Verse1 = Ref{v1r[1], chapter, verseStart, verseEnd}
 		}
 
-		if len(vvmatches) > 0 {
-			//fmt.Printf("VVMatch: ")
-			for i := 0; i < len(vvmatches); i++ {
+		if len(versesr) > 0 {
+			for i := 0; i < len(versesr); i++ {
 				var err error
 				var chapter, verseStart, verseEnd int
-				chapter, err = strconv.Atoi(vvmatches[i][2])
+				chapter, err = strconv.Atoi(versesr[i][2])
 				if err != nil {
 					panic(err)
 				}
-				verseStart, err = strconv.Atoi(vvmatches[i][3])
+				verseStart, err = strconv.Atoi(versesr[i][3])
 				if err != nil {
 					panic(err)
 				}
 
-				if vvmatches[i][4] != "" {
-					verseEnd, err = strconv.Atoi(vvmatches[i][4])
+				if versesr[i][4] != "" {
+					verseEnd, err = strconv.Atoi(versesr[i][4])
 					if err != nil {
 						panic(err)
 					}
@@ -116,13 +119,12 @@ func main() {
 					verseEnd = verseStart
 				}
 
-				ref := Ref{vvmatches[i][1], chapter, verseStart, verseEnd}
+				ref := Ref{versesr[i][1], chapter, verseStart, verseEnd}
 
 				if ref != entry.Verse1 {
 					entry.Verses = append(entry.Verses, ref)
 				}
 			}
-			//fmt.Println()
 		}
 
 	}
